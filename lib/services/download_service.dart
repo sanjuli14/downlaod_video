@@ -61,6 +61,41 @@ class DownloadService extends ChangeNotifier {
     }
   }
 
+  void _sendProgressUpdate(String taskId, DownloadTaskStatus status, int progress) {
+    _taskStatuses[taskId] = status;
+    _taskProgress[taskId] = progress;
+    notifyListeners();
+    
+    // Check if all downloads are complete
+    if (status == DownloadTaskStatus.complete || status == DownloadTaskStatus.failed) {
+      _checkAllDownloadsComplete();
+    }
+  }
+
+  void _checkAllDownloadsComplete() {
+    final allTasks = _taskStatuses.entries.where((entry) => 
+        entry.value == DownloadTaskStatus.complete || 
+        entry.value == DownloadTaskStatus.failed
+    ).length;
+    
+    final totalTasks = _taskStatuses.length;
+    
+    if (allTasks == totalTasks && totalTasks > 0) {
+      final completedTasks = _taskStatuses.entries.where((entry) => 
+          entry.value == DownloadTaskStatus.complete
+      ).length;
+      
+      if (completedTasks > 0) {
+        _showDownloadCompleteNotification();
+      }
+    }
+  }
+
+  void _showDownloadCompleteNotification() {
+    // This will be called from UI to show the toast
+    notifyListeners();
+  }
+
   Future<void> _downloadWithHttp(String url, String savePath, String fileName, String taskId) async {
     const maxRetries = 5;
     const timeout = Duration(seconds: 120);
@@ -107,14 +142,16 @@ class DownloadService extends ChangeNotifier {
     }
   }
 
-  void _sendProgressUpdate(String taskId, DownloadTaskStatus status, int progress) {
-    _taskStatuses[taskId] = status;
-    _taskProgress[taskId] = progress;
-    notifyListeners();
-  }
-
   DownloadTaskStatus getStatus(String taskId) => _taskStatuses[taskId] ?? DownloadTaskStatus.undefined;
   int getProgress(String taskId) => _taskProgress[taskId] ?? 0;
+  
+  // Getters for UI to access download status
+  Map<String, DownloadTaskStatus> get allStatuses => Map.from(_taskStatuses);
+  Map<String, int> get allProgress => Map.from(_taskProgress);
+  
+  void resetCompletionFlag() {
+    // This will be called from UI to reset the completion flag
+  }
 
   @override
   void dispose() {

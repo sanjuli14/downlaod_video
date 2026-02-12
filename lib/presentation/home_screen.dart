@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
+import 'package:provider/provider.dart';
+
 import '../models/media_file.dart';
-import '../services/scraper_service.dart';
 import '../services/download_service.dart';
+import '../services/scraper_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -16,6 +18,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _urlController = TextEditingController();
   List<MediaFile> _files = [];
   bool _isLoading = false;
+  bool _hasShownCompletionMessage = false;
 
   // Colores solicitados
   final Color _bgLight = const Color(0xFFECEFF1);
@@ -40,6 +43,10 @@ class _HomeScreenState extends State<HomeScreen> {
   void _downloadSelected() {
     final selectedFiles = _files.where((f) => f.isSelected).toList();
     if (selectedFiles.isEmpty) return;
+    
+    // Reset completion flag when starting new downloads
+    _hasShownCompletionMessage = false;
+    
     context.read<DownloadService>().downloadBatch(selectedFiles);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -49,6 +56,9 @@ class _HomeScreenState extends State<HomeScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       ),
     );
+    
+    // Start listening for completion
+    _listenForDownloadCompletion();
   }
 
   IconData _getIcon(MediaType type) {
@@ -58,6 +68,42 @@ class _HomeScreenState extends State<HomeScreen> {
       case MediaType.audio: return Icons.audiotrack_rounded;
       default: return Icons.insert_drive_file_rounded;
     }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  void _listenForDownloadCompletion() {
+    final downloadService = context.read<DownloadService>();
+    
+    // Use a timer to check periodically for download completion
+    Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      
+      final allStatuses = downloadService.allStatuses;
+      
+      // Check if we have any completed downloads
+      final completedTasks = allStatuses.entries.where((entry) => 
+          entry.value == DownloadTaskStatus.complete
+      ).toList();
+      
+      final totalTasks = allStatuses.length;
+      final finishedTasks = allStatuses.entries.where((entry) => 
+          entry.value == DownloadTaskStatus.complete || entry.value == DownloadTaskStatus.failed
+      ).length;
+      
+      // Show completion message when all downloads are finished and we haven't shown it yet
+      if (totalTasks > 0 && finishedTasks == totalTasks && completedTasks.isNotEmpty && !_hasShownCompletionMessage) {
+        _hasShownCompletionMessage = true;
+        timer.cancel();
+        _showDownloadCompleteMessage(context, completedTasks.length);
+      }
+    });
   }
 
   @override
@@ -237,6 +283,68 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
       },
+    );
+  }
+
+  void _checkDownloadCompletion(BuildContext context) {
+    final downloadService = context.read<DownloadService>();
+    final allStatuses = downloadService.allStatuses;
+    
+    // Check if we have any completed downloads
+    final completedTasks = allStatuses.entries.where((entry) => 
+        entry.value == DownloadTaskStatus.complete
+    ).toList();
+    
+    final totalTasks = allStatuses.length;
+    final finishedTasks = allStatuses.entries.where((entry) => 
+        entry.value == DownloadTaskStatus.complete || entry.value == DownloadTaskStatus.failed
+    ).length;
+    
+    // Show completion message when all downloads are finished and we haven't shown it yet
+    if (totalTasks > 0 && finishedTasks == totalTasks && completedTasks.isNotEmpty && !_hasShownCompletionMessage) {
+      _hasShownCompletionMessage = true;
+      // Schedule the snackbar to show after the current frame
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _showDownloadCompleteMessage(context, completedTasks.length);
+        }
+      });
+    }
+  }
+
+  void _showDownloadCompleteMessage(BuildContext context, int completedCount) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '¡Descarga finalizada!',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '$completedCount archivo(s) guardados en: /storage/emulated/0/Download',
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: _primaryDark,
+        duration: const Duration(seconds: 5),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        margin: const EdgeInsets.all(16),
+      ),
     );
   }
 }
